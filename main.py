@@ -110,6 +110,11 @@ class AppointmentTimerApp(QWidget):
 
         # Track current client
         self.current_client_id = None
+        
+        # Date filter state
+        self.date_filter_active = False
+        self.filter_from = None
+        self.filter_to = None
 
         # Refresh client list on startup
         self.refresh_client_list()
@@ -236,6 +241,47 @@ class AppointmentTimerApp(QWidget):
         header_layout.addWidget(back_btn)
         main_layout.addLayout(header_layout)
 
+        # Date filter section
+        filter_group = QGroupBox("Filter by Date Range")
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("From:"))
+        self.filter_from_date = QDateEdit()
+        self.filter_from_date.setCalendarPopup(True)
+        self.filter_from_date.setDate(QDate.currentDate().addYears(-1))
+        filter_layout.addWidget(self.filter_from_date)
+        filter_layout.addWidget(QLabel("To:"))
+        self.filter_to_date = QDateEdit()
+        self.filter_to_date.setCalendarPopup(True)
+        self.filter_to_date.setDate(QDate.currentDate())
+        filter_layout.addWidget(self.filter_to_date)
+        filter_layout.addStretch()
+        apply_filter_btn = QPushButton("Apply Filter")
+        apply_filter_btn.clicked.connect(self.apply_date_filter)
+        filter_layout.addWidget(apply_filter_btn)
+        clear_filter_btn = QPushButton("Clear Filter")
+        clear_filter_btn.clicked.connect(self.clear_date_filter)
+        filter_layout.addWidget(clear_filter_btn)
+        filter_group.setLayout(filter_layout)
+        main_layout.addWidget(filter_group)
+
+        # Totals section
+        totals_group = QGroupBox("Totals")
+        totals_layout = QHBoxLayout()
+        totals_layout.setSpacing(20)
+        self.total_appointments_label = QLabel("Appointments: 0")
+        totals_layout.addWidget(self.total_appointments_label)
+        self.total_duration_label = QLabel("Total Duration: 0 min")
+        totals_layout.addWidget(self.total_duration_label)
+        totals_layout.addStretch()
+        self.total_cost_label = QLabel("Total Cost: $0.00")
+        totals_font = QFont()
+        totals_font.setBold(True)
+        totals_font.setPointSize(12)
+        self.total_cost_label.setFont(totals_font)
+        totals_layout.addWidget(self.total_cost_label)
+        totals_group.setLayout(totals_layout)
+        main_layout.addWidget(totals_group)
+
         # Appointments list section
         list_group = QGroupBox("Appointments")
         list_layout = QVBoxLayout()
@@ -312,16 +358,63 @@ class AppointmentTimerApp(QWidget):
     def load_appointments(self):
         self.appt_list.clear()
         if not self.current_client_id:
+            # Reset totals when no client selected
+            self.total_appointments_label.setText("Appointments: 0")
+            self.total_duration_label.setText("Total Duration: 0 min")
+            self.total_cost_label.setText("Total Cost: $0.00")
             return
         client_name = clients[self.current_client_id]["name"]
         self.client_label.setText(f"Appointments for: {client_name}")
+        
+        # Filter and display appointments
+        total_count = 0
+        total_duration = 0
+        total_cost = 0.0
+        
         for appt in appointments.values():
             if appt["client_id"] == self.current_client_id:
+                # Apply date filter if active
+                if self.date_filter_active:
+                    appt_date = datetime.strptime(appt['date'], "%Y-%m-%d").date()
+                    if self.filter_from and appt_date < self.filter_from:
+                        continue
+                    if self.filter_to and appt_date > self.filter_to:
+                        continue
+                
                 start = appt['start'].strftime("%I:%M %p")
                 end = appt['end'].strftime("%I:%M %p")
                 dur = f"{appt['duration']} min"
                 cost = f"${appt['cost']:.2f}"
                 self.appt_list.addItem(f"{appt['date']} • {start}-{end} ({dur}) • {cost}")
+                
+                # Calculate totals
+                total_count += 1
+                total_duration += appt['duration']
+                total_cost += appt['cost']
+        
+        # Update totals display
+        self.total_appointments_label.setText(f"Appointments: {total_count}")
+        self.total_duration_label.setText(f"Total Duration: {total_duration} min")
+        self.total_cost_label.setText(f"Total Cost: ${total_cost:.2f}")
+    
+    def apply_date_filter(self):
+        self.filter_from = self.filter_from_date.date().toPyDate()
+        self.filter_to = self.filter_to_date.date().toPyDate()
+        
+        if self.filter_from > self.filter_to:
+            QMessageBox.warning(self, "Error", "From date must be before or equal to To date")
+            return
+        
+        self.date_filter_active = True
+        self.load_appointments()
+    
+    def clear_date_filter(self):
+        self.date_filter_active = False
+        self.filter_from = None
+        self.filter_to = None
+        self.filter_from_date.setDate(QDate.currentDate().addYears(-1))
+        self.filter_to_date.setDate(QDate.currentDate())
+        self.load_appointments()
 
     def add_appointment(self):
         global appointment_counter
